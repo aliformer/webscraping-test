@@ -2,5 +2,6 @@ const { Console } = require('console');
 const {searchList, searchItemDetail} = require('./src/main');
 
 
-searchList(200, "minyak rambut", 10000)
+// parameter row per request, keyword, limit
+searchList(200, "tas ransel", 10000)
 
