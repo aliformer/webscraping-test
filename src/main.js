@@ -1,17 +1,15 @@
 const axios = require("axios");
 const { db, connection } = require("./db/model");
-const {userAgent} = require('./modules/utils');
+const { userAgent } = require("./modules/utils");
 const { ENDPOINT, SHOPINFO_QUERY, PRODUCTlIST_QUERY, PDPINFO_QUERY } = require("./modules/payload");
 const { SKU, SKURanking, Shop } = require("./db/schema");
 const { ChildProcess } = require("child_process");
-const { forEach } = require("lodash");
+const { forEach, indexOf } = require("lodash");
 
 connection();
 
-
-let temp = []
-let tempShop = []
-
+let temp = [];
+let tempShop = [];
 
 const axiosClient = axios.create();
 axiosClient.interceptors.request.use(async (config) => {
@@ -24,8 +22,6 @@ axiosClient.interceptors.request.use(async (config) => {
     return config;
 });
 
-
-
 const searchSKU = async (page, rows, dump, keyword, limit, t) => {
     try {
         const request = await axiosClient(ENDPOINT, {
@@ -35,27 +31,41 @@ const searchSKU = async (page, rows, dump, keyword, limit, t) => {
                     userAgent: userAgent[Math.floor(Math.random() * userAgent.length)]
                 }
             },
-            data: JSON.stringify({
-               ...PRODUCTlIST_QUERY(keyword, rows, page)
+            data: JSON.stringify    ({
+                ...PRODUCTlIST_QUERY(keyword, rows, page)
             })
         });
         const resp = await Promise.all([request]).then((res) => res.map((data) => data.data.data.ace_search_product_v4.data.products));
         const currDump = dump;
-        dump = [...dump, ...normalize(resp[0])]
-        tempShop = [...tempShop, ...resp[0].map(data => {  return { shopId: data.shop.id, shopName: data.shop.name }})];
+        dump = [...dump, ...normalize(resp[0], dump.length)];
         if (dump.length < limit && currDump.length < dump.length) {
             console.log("current data ====>", dump.length);
             await searchSKU(page + rows, rows, dump, keyword, limit, t);
-
         } else {
             temp = [...dump];
-            console.log("DONE");
-            await SKU.bulkCreate(temp, { updateOnDuplicate: ["productName", "shopId", "discountedPrice", "originalPrice", "rating", "soldCount"], transaction: t });
-            await Shop.bulkCreate( tempShop, { updateOnDuplicate: ['shopName'], transaction: t});
+            console.log("Scraping is done.");
+            console.log("Starting inserting data to database.");
+            await SKU.bulkCreate(
+                temp.map((data) => {
+                    return {
+                        skuId: data.skuId,
+                        productName: data.productName,
+                        shopId: data.shopId,
+                        discountedPrice: data.discountedPrice,
+                        originalPrice: data.originalPrice,
+                        rating: 0,
+                        soldCount: data.soldCount,
+                        createdAt: data.createdAt
+                    };
+                }),
+                { updateOnDuplicate:['createdAt'], transaction: t }
+            );
+            await Shop.bulkCreate( temp.map( data => { return { shopId: data.shopId, shopName: data.shopName }}), { updateOnDuplicate: ['shopName'], transaction: t});
+            await SKURanking.bulkCreate(temp.map((data, index) => { return { skuId: data.skuId, ranking: data.ranking, shopId:data.shopId, keyword: keyword }}), {transaction: t});
             await t.commit();
-            return temp
+            return temp;
         }
-        return temp
+        return temp;
     } catch (error) {
         console.log(error);
         await t.rollback();
@@ -64,7 +74,7 @@ const searchSKU = async (page, rows, dump, keyword, limit, t) => {
 
 const searchSKUById = async (productIds) => {
     try {
-        productIds.forEach()
+        productIds.forEach();
         const request = await axiosClient(ENDPOINT, {
             method: "POST",
             headers: {
@@ -76,21 +86,23 @@ const searchSKUById = async (productIds) => {
                 ...PDPINFO_QUERY(productId)
             })
         });
-        const resp = await Promise.all([request]).then((res) =>res.map(data=> data.data.data.getPDPInfo));
+        const resp = await Promise.all([request]).then((res) => res.map((data) => data.data.data.getPDPInfo));
     } catch (error) {
         console.log(error);
     }
 };
-const normalize = (array) => {
-    return array.map((data) => {
+const normalize = (array,dumpLen) => {
+    return array.map((data,index) => {
         return {
             skuId: data.id,
             shopId: data.shop.id,
             productName: data.name,
             discountedPrice: parseInt(data.price.replace(/[RP|.]/gi, "") || 0),
-            originalPrice: parseInt(data.originalPrice.replace(/[RP|.]/gi, "")) ? parseInt(data.originalPrice.replace(/[RP|.]/gi, "")) : 0 ,
-            rating: data.rating ? data.rating : 0,
+            originalPrice: parseInt(data.originalPrice.replace(/[RP|.]/gi, "")) ? parseInt(data.originalPrice.replace(/[RP|.]/gi, "")) : 0,
+            rating: data.rating,
+            ranking: dumpLen + index + 1, 
             soldCount: data.countReview ? data.countReview : 0,
+            shopName: data.shop.name,
             createdAt: new Date()
         };
     });
@@ -98,34 +110,27 @@ const normalize = (array) => {
 const searchList = async (rows, keyword, limit) => {
     t = await db.transaction();
     try {
-        await searchSKU(1, rows, [], keyword, limit, t);
+        await searchSKU(0, rows, [], keyword, limit, t);
     } catch (error) {
         console.log(error);
-    }
-    finally {
-        
-
+    } finally {
     }
 };
 
-
 const searchItemDetail = async () => {
-    const t = await db.transaction()
-    const dump = []
+    const t = await db.transaction();
+    const dump = [];
     try {
-        const temp = await SKU.findAll({attributes: ['skuId']});
-        await temp.forEach( async id => {
-            const result = await searchSKUById(id.skuId)
-            dump.push(result)
-            console.log(dump.length)
-        })
-   
-    }
-    catch(error){
+        const temp = await SKU.findAll({ attributes: ["skuId"] });
+        await temp.forEach(async (id) => {
+            const result = await searchSKUById(id.skuId);
+            dump.push(result);
+            console.log(dump.length);
+        });
+    } catch (error) {
         t.rollback();
         console.log(error);
     }
-}
-
+};
 
 module.exports = { searchList, searchItemDetail };
