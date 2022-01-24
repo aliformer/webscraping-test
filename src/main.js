@@ -1,6 +1,6 @@
 const axios = require("axios");
 const { db, connection } = require("./db/model");
-const userAgent = require('./modules/utils');
+const {userAgent} = require('./modules/utils');
 const { ENDPOINT, SHOPINFO_QUERY, PRODUCTlIST_QUERY, PDPINFO_QUERY } = require("./modules/payload");
 const { SKU, SKURanking, Shop } = require("./db/schema");
 const { ChildProcess } = require("child_process");
@@ -51,7 +51,7 @@ const searchSKU = async (page, rows, dump, keyword, limit, t) => {
             temp = [...dump];
             console.log("DONE");
             await SKU.bulkCreate(temp, { updateOnDuplicate: ["productName", "shopId", "discountedPrice", "originalPrice", "rating", "soldCount"], transaction: t });
-            await Shop.bulkCreate( tempShop, {transaction: t});
+            await Shop.bulkCreate( tempShop, { updateOnDuplicate: ['shopName'], transaction: t});
             await t.commit();
             return temp
         }
@@ -91,7 +91,6 @@ const normalize = (array) => {
             originalPrice: parseInt(data.originalPrice.replace(/[RP|.]/gi, "")) ? parseInt(data.originalPrice.replace(/[RP|.]/gi, "")) : 0 ,
             rating: data.rating ? data.rating : 0,
             soldCount: data.countReview ? data.countReview : 0,
-            shopName: data.shop.name,
             createdAt: new Date()
         };
     });

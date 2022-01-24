@@ -2,5 +2,5 @@ const { Console } = require('console');
 const {searchList, searchItemDetail} = require('./src/main');
 
 
-seearchList()
+searchList(200, "minyak rambut", 10000)
 

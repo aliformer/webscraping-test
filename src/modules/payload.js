@@ -92,4 +92,4 @@ const PRODUCTlIST_QUERY = (keyword, rows, page) => { return {
 }
 }
 
-  module.exports = { ENPOINT, SHOPINFO_QUERY, PDPINFO_QUERY, PRODUCTlIST_QUERY }
+  module.exports = { ENDPOINT, SHOPINFO_QUERY, PDPINFO_QUERY, PRODUCTlIST_QUERY }
